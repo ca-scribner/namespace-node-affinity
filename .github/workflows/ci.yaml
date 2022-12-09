@@ -39,15 +39,6 @@ jobs:
       - name: Test
         run: go test -race -coverprofile=coverage.txt -covermode=atomic -v ./...
 
-      - name: Upload Coverage
-        uses: codecov/codecov-action@v2
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.txt
-          flags: unittests
-          fail_ci_if_error: true
-          verbose: true
-
   build-and-push-docker-images:
     needs: lint-and-test
     if: ${{ github.event_name != 'pull_request' }}

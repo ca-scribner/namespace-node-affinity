@@ -1,0 +1,12 @@
+name: namespace-node-affinity
+summary:
+description: |
+  A tool for adding Node Affinities and Tolerations to all pods in specific Kubernetes namespaces.
+# TODO: Can I delete this?
+#containers:
+#resources:
+#  oci-image:
+#    type: oci-image
+#    description: 'Backing OCI image'
+#    auto-fetch: true
+#    upstream-source: 'docker.io/seldonio/seldon-core-operator:1.14.0'

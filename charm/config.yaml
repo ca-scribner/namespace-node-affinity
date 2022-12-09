@@ -1,0 +1,6 @@
+options:
+  # TODO: Update this
+  dummy-option:
+    type: string
+    default: ''
+    description: ''
