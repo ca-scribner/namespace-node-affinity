@@ -89,7 +89,7 @@ class NamespaceNodeAffinityOperator(CharmBase):
         """Refreshes the certificates, overwriting them if they already existed."""
         certs = gen_certs(self.model)
         for k, v in certs.items():
-            self._stored.k = v
+            setattr(self._stored, k, v)
 
     @property
     def k8s_resource_handler(self):
