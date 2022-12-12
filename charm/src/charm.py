@@ -93,7 +93,7 @@ class NamespaceNodeAffinityOperator(CharmBase):
 
     @property
     def k8s_resource_handler(self):
-        """Update K8S with K8S resources."""
+        """Returns a KubernetesResourceHandler for managing the k8s resources."""
         if not self._k8s_resource_handler:
             self._k8s_resource_handler = KubernetesResourceHandler(
                 field_manager=self._lightkube_field_manager,

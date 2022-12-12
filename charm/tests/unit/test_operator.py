@@ -9,7 +9,7 @@ import pytest
 from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
 from ops.testing import Harness
 
-from charm import NamespaceNodeAffinityOperator, TAGGED_IMAGE
+from charm import NamespaceNodeAffinityOperator, TAGGED_IMAGE, K8S_RESOURCE_FILES
 
 
 @pytest.fixture(scope="function")
@@ -53,6 +53,25 @@ class TestCharm:
         }
 
         assert harness.charm._context == expected_context
+
+    def test_k8s_resource_handler(self, harness: Harness):
+        """Tests whether the k8s_resource_handler is instantiated and cached properly."""
+        harness.begin()
+        logger = "logger"
+        harness.charm.logger = logger
+        context = harness.charm._context
+        field_manager = "field_manager"
+        harness.charm._lightkube_field_manager = field_manager
+        k8s_resource_files = K8S_RESOURCE_FILES
+
+        krh = harness.charm.k8s_resource_handler
+        assert krh.log == logger
+        assert krh.context == context
+        assert krh._field_manager == field_manager
+        assert krh.template_files == k8s_resource_files
+
+        krh2 = harness.charm.k8s_resource_handler
+        assert krh is krh2
 
     @pytest.mark.parametrize(
         "cert_data_dict, should_certs_refresh",
