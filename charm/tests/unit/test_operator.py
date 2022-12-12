@@ -96,15 +96,14 @@ class TestCharm:
         * does not generate a new cert if there is an existing one
         """
         # Arrange
+        # Mock away gen_certs so the class does not generate any certs unless we want it to
+        mocked_gen_certs = mocker.patch("charm.NamespaceNodeAffinityOperator._gen_certs", autospec=True)
         harness.begin()
+        mocked_gen_certs.reset_mock()
 
         # Set any provided cert data to _stored
         for k, v in cert_data_dict.items():
             setattr(harness.charm._stored, k, v)
-
-        # Mock _refresh_certs so we know if we try to regenerate certs
-        mocked_gen_certs = mocker.MagicMock()
-        harness.charm._gen_certs = mocked_gen_certs
 
         # Act
         harness.charm._gen_certs_if_missing()
