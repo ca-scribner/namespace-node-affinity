@@ -6,15 +6,20 @@
 """A Juju Charm for Namespace Node Affinity."""
 
 import logging
-import tempfile
-from pathlib import Path
-from subprocess import check_call
+from base64 import b64encode
 
+from charmed_kubeflow_chisme.exceptions import ErrorWithStatus
+from charmed_kubeflow_chisme.kubernetes import KubernetesResourceHandler
+from lightkube import ApiError
+from lightkube.generic_resource import load_in_cluster_generic_resources
 from ops.charm import CharmBase
 from ops.framework import StoredState
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
+from certs import gen_certs
 
-SSL_CONFIG_FILE = "src/templates/ssl.conf.j2"
+K8S_RESOURCE_FILES = ["src/templates/"]
+TAGGED_IMAGE = "charmedkubeflow/namespace-node-affinity:90dde45ab265af91369d09a377a26034bc453a5d"
 
 
 class NamespaceNodeAffinityOperator(CharmBase):
@@ -32,18 +37,8 @@ class NamespaceNodeAffinityOperator(CharmBase):
         self._lightkube_field_manager = "lightkube"
         self._name = self.model.app.name
 
-        # generate certs
-        self._stored.set_default(**self._gen_certs())
+        self._gen_certs_if_missing()
 
-        # setup context to be used for updating K8S resources
-        self._context = {
-            # TODO: add context
-            # "app_name": self._name,
-            # "namespace": self._namespace,
-            # "service": self._name,
-            # "webhook_port": self._webhook_port,
-            # "ca_bundle": b64encode(self._stored.ca.encode("ascii")).decode("utf-8"),
-        }
         self._k8s_resource_handler = None
 
         # setup events
@@ -53,92 +48,86 @@ class NamespaceNodeAffinityOperator(CharmBase):
         self.framework.observe(self.on.remove, self.main)
         self.framework.observe(self.on.upgrade_charm, self.main)
 
-    def main(self, event):
+    def main(self, _):
         """Entrypoint for most charm events."""
-        raise NotImplementedError
+        try:
+            self._check_leader()
+            self._deploy_k8s_resources()
+        except ErrorWithStatus as error:
+            self.model.unit.status = error.status
+            return
+
+        self.model.unit.status = ActiveStatus()
+
+    def _check_leader(self):
+        """Check if this unit is a leader."""
+        if not self.unit.is_leader():
+            self.logger.info("Not a leader, skipping setup")
+            raise ErrorWithStatus("Waiting for leadership", WaitingStatus)
+
+    def _deploy_k8s_resources(self) -> None:
+        """Deploys K8S resources."""
+        try:
+            self.unit.status = MaintenanceStatus("Creating K8S resources")
+            self.k8s_resource_handler.apply()
+        except ApiError:
+            raise ErrorWithStatus("K8S resources creation failed", BlockedStatus)
+        self.model.unit.status = MaintenanceStatus("K8S resources created")
+
+    def _gen_certs_if_missing(self):
+        """Generates certificates if they don't already exist in _stored."""
+        cert_attributes = ["cert", "ca", "key"]
+        # Generate new certs if any cert attribute is missing
+        for cert_attribute in cert_attributes:
+            try:
+                getattr(self._stored, cert_attribute)
+            except AttributeError:
+                self._gen_certs()
+                break
 
     def _gen_certs(self):
-        """Generate certificates."""
-        # TODO: Refactor this into a python-based method that can be imported from Chisme
-        # generate SSL configuration based on template
-        model = self.model.name
+        """Refreshes the certificates, overwriting them if they already existed."""
+        certs = gen_certs(self.model)
+        for k, v in certs.items():
+            self._stored.k = v
 
-        ssl_conf = Path(SSL_CONFIG_FILE).read_text()
-        ssl_conf = ssl_conf.replace("{{ model }}", str(model))
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            Path(tmp_dir + "/seldon-cert-gen-ssl.conf").write_text(ssl_conf)
-
-            # execute OpenSSL commands
-            check_call(["openssl", "genrsa", "-out", tmp_dir + "/seldon-cert-gen-ca.key", "2048"])
-            check_call(
-                ["openssl", "genrsa", "-out", tmp_dir + "/seldon-cert-gen-server.key", "2048"]
+    @property
+    def k8s_resource_handler(self):
+        """Update K8S with K8S resources."""
+        if not self._k8s_resource_handler:
+            self._k8s_resource_handler = KubernetesResourceHandler(
+                field_manager=self._lightkube_field_manager,
+                template_files=K8S_RESOURCE_FILES,
+                context=self._context,
+                logger=self.logger,
             )
-            check_call(
-                [
-                    "openssl",
-                    "req",
-                    "-x509",
-                    "-new",
-                    "-sha256",
-                    "-nodes",
-                    "-days",
-                    "3650",
-                    "-key",
-                    tmp_dir + "/seldon-cert-gen-ca.key",
-                    "-subj",
-                    "/CN=127.0.0.1",
-                    "-out",
-                    tmp_dir + "/seldon-cert-gen-ca.crt",
-                    ]
-            )
-            check_call(
-                [
-                    "openssl",
-                    "req",
-                    "-new",
-                    "-sha256",
-                    "-key",
-                    tmp_dir + "/seldon-cert-gen-server.key",
-                    "-out",
-                    tmp_dir + "/seldon-cert-gen-server.csr",
-                    "-config",
-                    tmp_dir + "/seldon-cert-gen-ssl.conf",
-                    ]
-            )
-            check_call(
-                [
-                    "openssl",
-                    "x509",
-                    "-req",
-                    "-sha256",
-                    "-in",
-                    tmp_dir + "/seldon-cert-gen-server.csr",
-                    "-CA",
-                    tmp_dir + "/seldon-cert-gen-ca.crt",
-                    "-CAkey",
-                    tmp_dir + "/seldon-cert-gen-ca.key",
-                    "-CAcreateserial",
-                    "-out",
-                    tmp_dir + "/seldon-cert-gen-cert.pem",
-                    "-days",
-                    "365",
-                    "-extensions",
-                    "v3_ext",
-                    "-extfile",
-                    tmp_dir + "/seldon-cert-gen-ssl.conf",
-                    ]
-            )
+        load_in_cluster_generic_resources(self._k8s_resource_handler.lightkube_client)
+        return self._k8s_resource_handler
 
-            ret_certs = {
-                "cert": Path(tmp_dir + "/seldon-cert-gen-cert.pem").read_text(),
-                "key": Path(tmp_dir + "/seldon-cert-gen-server.key").read_text(),
-                "ca": Path(tmp_dir + "/seldon-cert-gen-ca.crt").read_text(),
-            }
+    @k8s_resource_handler.setter
+    def k8s_resource_handler(self, handler: KubernetesResourceHandler):
+        self._k8s_resource_handler = handler
 
-            # cleanup temporary files
-            check_call(["rm", "-f", tmp_dir + "/seldon-cert-gen-*"])
+    @property
+    def _context(self):
+        return {
+            "app_name": self._name,
+            "namespace": self._namespace,
+            "image": TAGGED_IMAGE,
+            "ca_bundle": b64encode(self._cert_ca.encode("ascii")).decode("utf-8"),
+        }
 
-        return ret_certs
+    @property
+    def _cert(self):
+        return self._stored.cert
+
+    @property
+    def _cert_key(self):
+        return self._stored.key
+
+    @property
+    def _cert_ca(self):
+        return self._stored.ca
 
     # todo: add remove method
     # def _on_remove(self, event):

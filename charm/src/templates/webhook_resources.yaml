@@ -1,0 +1,75 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ app_name }}-pod-webhook
+  namespace: {{ namespace }}
+  labels:
+    app: namespace-node-affinity
+webhooks:
+  - name: {{ app_name }}-pod-webhook.default.svc
+    clientConfig:
+      caBundle: {{ ca_bundle }}
+      service:
+        name: {{ app_name }}-pod-webhook
+        namespace: {{ namespace }}
+        path: "/mutate"
+        port: 443
+    rules:
+      - operations: ["CREATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    reinvocationPolicy: Never
+    failurePolicy: Ignore
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ app_name }}-pod-webhook
+  namespace: {{ namespace }}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      name: {{ app_name }}-pod-webhook
+    spec:
+      containers:
+        - name: mutator
+          image: {{ image }}
+          volumeMounts:
+            - mountPath: /etc/webhook/certs
+              name: webhook-certs
+              readOnly: true
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 250m
+              memory: 64Mi
+          env:
+            - name: CERT
+              value: /etc/webhook/certs/tls.crt
+            - name: KEY
+              value: /etc/webhook/certs/tls.key
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+      volumes:
+        - name: webhook-certs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ app_name }}-pod-webhook
+  namespace: {{ namespace }}
+spec:
+  publishNotReadyAddresses: true
+  ports:
+    - port: 443
+      targetPort: 8443
