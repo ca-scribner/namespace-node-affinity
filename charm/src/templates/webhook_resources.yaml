@@ -64,6 +64,8 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.namespace
+          - name: CONFIG_MAP_NAME
+            value: {{ app_name }}
       volumes:
         - name: webhook-certs
           secret:
@@ -93,3 +95,10 @@ type: Opaque
 data:
   cert: {{ cert }}
   key: {{ cert_key }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ app_name }}
+data:
+  {{ configmap_settings | indent(2) }}

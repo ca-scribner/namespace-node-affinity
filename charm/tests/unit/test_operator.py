@@ -6,7 +6,8 @@
 from base64 import b64encode
 
 import pytest
-from ops.model import ActiveStatus, MaintenanceStatus, WaitingStatus
+import yaml
+from ops.model import WaitingStatus
 from ops.testing import Harness
 
 from charm import NamespaceNodeAffinityOperator, TAGGED_IMAGE, K8S_RESOURCE_FILES
@@ -30,6 +31,7 @@ class TestCharm:
 
     def test_install(self, harness: Harness):
         """Test install hook."""
+        # TODO: This test will try to call k8s api.  Need to mock that out.
         harness.set_leader(True)
         harness.begin_with_initial_hooks()
         assert False, "not yet implemented"
@@ -38,18 +40,27 @@ class TestCharm:
         """Test context property."""
         model_name = "test-model"
         image = TAGGED_IMAGE
-        ca_bundle = "abc123"
+        ca_bundle = "bundle123"
+        cert = "cert123"
+        cert_key = "cert_key123"
+        settings_yaml = "abc: 123"
+        harness.update_config({"settings_yaml": settings_yaml})
 
         harness.set_model_name(model_name)
 
         harness.begin()
         harness.charm._stored.ca = ca_bundle
+        harness.charm._stored.cert = cert
+        harness.charm._stored.key = cert_key
 
         expected_context = {
             "app_name": "namespace-node-affinity",  # Can we set this somehow?
             "namespace": model_name,
             "image": image,
             "ca_bundle": b64encode(ca_bundle.encode("ascii")).decode("utf-8"),
+            "cert": b64encode(cert.encode("ascii")).decode("utf-8"),
+            "cert_key": b64encode(cert_key.encode("ascii")).decode("utf-8"),
+            "configmap_settings": f"{settings_yaml}\n",
         }
 
         assert harness.charm._context == expected_context
@@ -85,10 +96,19 @@ class TestCharm:
             ({"cert": "x", "ca": "x"}, True),
             # Cases where we should not generate a new cert
             # Cert data already exists, we should not refresh certs
-            ({"cert": "x", "ca": "x", "key": "x", }, False),
-        ]
+            (
+                {
+                    "cert": "x",
+                    "ca": "x",
+                    "key": "x",
+                },
+                False,
+            ),
+        ],
     )
-    def test_gen_certs_if_missing(self, cert_data_dict, should_certs_refresh, harness: Harness, mocker):
+    def test_gen_certs_if_missing(
+        self, cert_data_dict, should_certs_refresh, harness: Harness, mocker
+    ):
         """Test _gen_certs_if_missing.
 
         This tests whether _gen_certs_if_missing:
@@ -97,7 +117,9 @@ class TestCharm:
         """
         # Arrange
         # Mock away gen_certs so the class does not generate any certs unless we want it to
-        mocked_gen_certs = mocker.patch("charm.NamespaceNodeAffinityOperator._gen_certs", autospec=True)
+        mocked_gen_certs = mocker.patch(
+            "charm.NamespaceNodeAffinityOperator._gen_certs", autospec=True
+        )
         harness.begin()
         mocked_gen_certs.reset_mock()
 
@@ -111,3 +133,20 @@ class TestCharm:
         # Assert that we have/have not called refresh_certs, as expected
         assert mocked_gen_certs.called == should_certs_refresh
 
+    def test_get_settings_yaml(self, harness: Harness):
+        """Test _get_settings_yaml."""
+        harness.begin()
+
+        # Assert that we return an empty settings if no config is set
+        returned_settings = harness.charm._get_settings_yaml()
+        assert returned_settings == ""
+
+        # Assert that we return a formatted yaml string if settings_yaml config is set
+        settings_yaml = """
+        key: 
+          subkey: value
+        """
+        expected_settings = yaml.dump(yaml.safe_load(settings_yaml))
+        harness.update_config({"settings_yaml": settings_yaml})
+        returned_settings = harness.charm._get_settings_yaml()
+        assert returned_settings == expected_settings

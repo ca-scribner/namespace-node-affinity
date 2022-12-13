@@ -8,6 +8,7 @@
 import logging
 from base64 import b64encode
 
+import yaml
 from charmed_kubeflow_chisme.exceptions import ErrorWithStatus
 from charmed_kubeflow_chisme.kubernetes import KubernetesResourceHandler
 from lightkube import ApiError
@@ -126,7 +127,17 @@ class NamespaceNodeAffinityOperator(CharmBase):
             "ca_bundle": b64encode(self._cert_ca.encode("ascii")).decode("utf-8"),
             "cert": b64encode(self._cert.encode("ascii")).decode("utf-8"),
             "cert_key": b64encode(self._cert_key.encode("ascii")).decode("utf-8"),
+            "configmap_settings": self._get_settings_yaml(),
         }
+
+    def _get_settings_yaml(self):
+        """Returns a string of the settings_yaml if it exists, or an empty string."""
+        settings = self.model.config["settings_yaml"]
+        if not settings:
+            return ""
+
+        settings = yaml.safe_load(self.model.config["settings_yaml"])
+        return yaml.dump(settings)
 
     @property
     def _cert(self):
