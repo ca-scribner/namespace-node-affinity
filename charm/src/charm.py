@@ -19,7 +19,7 @@ from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingSta
 
 from certs import gen_certs
 
-K8S_RESOURCE_FILES = ["src/templates/"]
+K8S_RESOURCE_FILES = ["src/templates/webhook_resources.yaml"]
 TAGGED_IMAGE = "charmedkubeflow/namespace-node-affinity:90dde45ab265af91369d09a377a26034bc453a5d"
 
 
@@ -51,6 +51,7 @@ class NamespaceNodeAffinityOperator(CharmBase):
 
     def main(self, _):
         """Entrypoint for most charm events."""
+        self.logger.info("Starting main")
         try:
             self._check_leader()
             self._deploy_k8s_resources()
@@ -62,21 +63,28 @@ class NamespaceNodeAffinityOperator(CharmBase):
 
     def _check_leader(self):
         """Check if this unit is a leader."""
+        self.logger.info("_check_leader")
         if not self.unit.is_leader():
             self.logger.info("Not a leader, skipping setup")
             raise ErrorWithStatus("Waiting for leadership", WaitingStatus)
 
     def _deploy_k8s_resources(self) -> None:
         """Deploys K8S resources."""
+        self.logger.info("_deploy_k8s_resources")
         try:
             self.unit.status = MaintenanceStatus("Creating K8S resources")
             self.k8s_resource_handler.apply()
         except ApiError:
-            raise ErrorWithStatus("K8S resources creation failed", BlockedStatus)
+            self.logger.error("K8S resource creation failed with ApiError:")
+            self.logger.error(str(ApiError))
+            self.logger.error(ApiError.status)
+
+        raise ErrorWithStatus("K8S resources creation failed", BlockedStatus)
         self.model.unit.status = MaintenanceStatus("K8S resources created")
 
     def _gen_certs_if_missing(self):
         """Generates certificates if they don't already exist in _stored."""
+        self.logger.info("_gen_certs_if_missing")
         cert_attributes = ["cert", "ca", "key"]
         # Generate new certs if any cert attribute is missing
         for cert_attribute in cert_attributes:
@@ -116,6 +124,8 @@ class NamespaceNodeAffinityOperator(CharmBase):
             "namespace": self._namespace,
             "image": TAGGED_IMAGE,
             "ca_bundle": b64encode(self._cert_ca.encode("ascii")).decode("utf-8"),
+            "cert": b64encode(self._cert.encode("ascii")).decode("utf-8"),
+            "cert_key": b64encode(self._cert_key.encode("ascii")).decode("utf-8"),
         }
 
     @property
