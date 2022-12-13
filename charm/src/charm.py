@@ -14,6 +14,7 @@ from lightkube import ApiError
 from lightkube.generic_resource import load_in_cluster_generic_resources
 from ops.charm import CharmBase
 from ops.framework import StoredState
+from ops.main import main
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 
 from certs import gen_certs
@@ -132,3 +133,6 @@ class NamespaceNodeAffinityOperator(CharmBase):
     # todo: add remove method
     # def _on_remove(self, event):
     #     raise NotImplementedError
+
+if __name__ == "__main__":
+    main(NamespaceNodeAffinityOperator)
