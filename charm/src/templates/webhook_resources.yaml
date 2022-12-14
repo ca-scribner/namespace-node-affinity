@@ -44,6 +44,9 @@ spec:
       containers:
       - name: mutator
         image: {{ image }}
+        ports:
+          - containerPort: 8443
+            protocol: TCP
         volumeMounts:
           - mountPath: /etc/webhook/certs
             name: webhook-certs
@@ -66,6 +69,7 @@ spec:
                 fieldPath: metadata.namespace
           - name: CONFIG_MAP_NAME
             value: {{ app_name }}
+      serviceAccountName: {{ app_name }}-pod-webhook
       volumes:
         - name: webhook-certs
           secret:
@@ -86,6 +90,8 @@ spec:
   ports:
     - port: 443
       targetPort: 8443
+  selector:
+    app: {{ app_name }}-pod-webhook
 ---
 apiVersion: v1
 kind: Secret
@@ -102,3 +108,34 @@ metadata:
   name: {{ app_name }}
 data:
   {{ configmap_settings | indent(2) }}
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ app_name }}-pod-webhook
+  namespace: {{ namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ app_name }}-pod-webhook
+  namespace: {{ namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ app_name }}-pod-webhook
+    namespace: {{ namespace }}
+    apiGroup: ""
+roleRef:
+  kind: Role
+  name: {{ app_name }}-pod-webhook
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ app_name }}-pod-webhook
+  namespace: {{ namespace }}
