@@ -12,6 +12,22 @@ from ops.testing import Harness
 
 from charm import NamespaceNodeAffinityOperator, TAGGED_IMAGE, K8S_RESOURCE_FILES
 
+# Used for test_get_settings_yaml
+SETTINGS_YAML = """
+kubeflow: |
+    nodeSelectorTerms:
+      - matchExpressions:
+        - key: the-testing-key
+          operator: In
+          values:
+          - the-testing-val1
+      - matchExpressions:
+        - key: the-testing-key2
+          operator: In
+          values:
+          - the-testing-val2
+        """
+
 
 @pytest.fixture(scope="function")
 def harness() -> Harness:
@@ -146,6 +162,12 @@ class TestCharm:
         key: 
           subkey: value
         """
+        expected_settings = yaml.dump(yaml.safe_load(settings_yaml))
+        harness.update_config({"settings_yaml": settings_yaml})
+        returned_settings = harness.charm._get_settings_yaml()
+        assert returned_settings == expected_settings
+
+        settings_yaml = SETTINGS_YAML
         expected_settings = yaml.dump(yaml.safe_load(settings_yaml))
         harness.update_config({"settings_yaml": settings_yaml})
         returned_settings = harness.charm._get_settings_yaml()
