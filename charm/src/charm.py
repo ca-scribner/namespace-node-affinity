@@ -97,7 +97,7 @@ class NamespaceNodeAffinityOperator(CharmBase):
 
     def _gen_certs(self):
         """Refreshes the certificates, overwriting them if they already existed."""
-        certs = gen_certs(self.model)
+        certs = gen_certs(model=self._namespace, service_name=f"{self._name}-pod-webhook")
         for k, v in certs.items():
             setattr(self._stored, k, v)
 

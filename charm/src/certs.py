@@ -6,13 +6,15 @@ from subprocess import check_call
 SSL_CONFIG_FILE = "src/templates/ssl.conf.j2"
 
 
-def gen_certs(model: str):
+def gen_certs(model: str, service_name: str):
     """Generate certificates."""
     # TODO: Refactor this into a python-based method that can be imported from Chisme
     # generate SSL configuration based on template
 
     ssl_conf = Path(SSL_CONFIG_FILE).read_text()
     ssl_conf = ssl_conf.replace("{{ model }}", str(model))
+    ssl_conf = ssl_conf.replace("{{ service_name }}", str(service_name))
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         Path(tmp_dir + "/seldon-cert-gen-ssl.conf").write_text(ssl_conf)
 
